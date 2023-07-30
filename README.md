@@ -42,6 +42,11 @@ Yahoo! finance API is intended for personal use only.**
 
 ---
 
+## News [2023-01-27]
+Since December 2022 Yahoo has been encrypting the web data that `yfinance` scrapes for non-market data. Fortunately the decryption keys are available, although Yahoo moved/changed them several times hence `yfinance` breaking several times. `yfinance` is now better prepared for any future changes by Yahoo.
+
+Why is Yahoo doing this? We don't know. Is it to stop scrapers? Maybe, so we've implemented changes to reduce load on Yahoo. In December we rolled out version 0.2 with optimised scraping. Then in 0.2.6 introduced `Ticker.fast_info`, providing much faster access to some `info` elements wherever possible e.g. price stats and forcing users to switch (sorry but we think necessary). `info` will continue to exist for as long as there are elements without a fast alternative.
+
 ## Quick Start
 
 ### The Ticker module
@@ -53,8 +58,10 @@ import yfinance as yf
 
 msft = yf.Ticker("MSFT")
 
-# get all stock info
+# get all stock info (slow)
 msft.info
+# fast access to subset of stock info (opportunistic)
+msft.fast_info
 
 # get historical market data
 hist = msft.history(period="1mo")
@@ -69,6 +76,9 @@ msft.splits
 msft.capital_gains  # only for mutual funds & etfs
 
 # show share count
+# - yearly summary:
+msft.shares
+# - accurate time-series count:
 msft.get_shares_full(start="2022-01-01", end=None)
 
 # show financials:
@@ -87,6 +97,25 @@ msft.quarterly_cashflow
 msft.major_holders
 msft.institutional_holders
 msft.mutualfund_holders
+
+# show earnings
+msft.earnings
+msft.quarterly_earnings
+
+# show sustainability
+msft.sustainability
+
+# show analysts recommendations
+msft.recommendations
+msft.recommendations_summary
+# show analysts other work
+msft.analyst_price_target
+msft.revenue_forecasts
+msft.earnings_forecasts
+msft.earnings_trend
+
+# show next event (earnings, etc)
+msft.calendar
 
 # Show future and historic earnings dates, returns at most next 4 quarters and last 8 quarters by default. 
 # Note: If more are needed use msft.get_earnings_dates(limit=XX) with increased limit argument.
@@ -125,8 +154,6 @@ msft.option_chain(..., proxy="PROXY_SERVER")
 ...
 ```
 
-### Multiple tickers
-
 To initialize multiple `Ticker` objects, use
 
 ```python
@@ -140,18 +167,24 @@ tickers.tickers['AAPL'].history(period="1mo")
 tickers.tickers['GOOG'].actions
 ```
 
-To download price history into one table:
+### Fetching data for multiple tickers
 
 ```python
 import yfinance as yf
-data = yf.download("SPY AAPL", period="1mo")
+data = yf.download("SPY AAPL", start="2017-01-01", end="2017-04-30")
 ```
 
-#### `yf.download()` and `Ticker.history()` have many options for configuring fetching and processing. [Review the Wiki](https://github.com/ranaroussi/yfinance/wiki) for more options and detail.
+`yf.download()` and `Ticker.history()` have many options for configuring fetching and processing, e.g.:
 
-### Logging
+```python
+yf.download(tickers = "SPY AAPL",  # list of tickers
+            period = "1y",         # time period
+            interval = "1d",       # trading interval
+            ignore_tz = True,      # ignore timezone when aligning data from different exchanges?
+            prepost = False)       # download pre/post market hours data?
+```
 
-`yfinance` now uses the `logging` module to handle messages, default behaviour is only print errors. If debugging, use `yf.enable_debug_mode()` to switch logging to debug with custom formatting.
+Review the [Wiki](https://github.com/ranaroussi/yfinance/wiki) for more options and detail.
 
 ### Smarter scraping
 
@@ -173,12 +206,11 @@ Combine a `requests_cache` with rate-limiting to avoid triggering Yahoo's rate-l
 from requests import Session
 from requests_cache import CacheMixin, SQLiteCache
 from requests_ratelimiter import LimiterMixin, MemoryQueueBucket
-from pyrate_limiter import Duration, RequestRate, Limiter
 class CachedLimiterSession(CacheMixin, LimiterMixin, Session):
-    pass
+    """ """
 
 session = CachedLimiterSession(
-    limiter=Limiter(RequestRate(2, Duration.SECOND*5)),  # max 2 requests per 5 seconds
+    per_second=0.9,
     bucket_class=MemoryQueueBucket,
     backend=SQLiteCache("yfinance.cache"),
 )
@@ -199,7 +231,21 @@ yfinance?](https://stackoverflow.com/questions/63107801)
         -   How to download single or multiple tickers into a single
             dataframe with single level column names and a ticker column
 
-### `pandas_datareader` override
+### Timezone cache store
+
+When fetching price data, all dates are localized to stock exchange timezone. 
+But timezone retrieval is relatively slow, so yfinance attemps to cache them 
+in your users cache folder. 
+You can direct cache to use a different location with `set_tz_cache_location()`:
+```python
+import yfinance as yf
+yf.set_tz_cache_location("custom/cache/location")
+...
+```
+
+---
+
+## `pandas_datareader` override
 
 If your code uses `pandas_datareader` and you want to download data
 faster, you can "hijack" `pandas_datareader.data.get_data_yahoo()`
@@ -216,18 +262,6 @@ yf.pdr_override() # <== that's all it takes :-)
 data = pdr.get_data_yahoo("SPY", start="2017-01-01", end="2017-04-30")
 ```
 
-### Timezone cache store
-
-When fetching price data, all dates are localized to stock exchange timezone. 
-But timezone retrieval is relatively slow, so yfinance attemps to cache them 
-in your users cache folder. 
-You can direct cache to use a different location with `set_tz_cache_location()`:
-```python
-import yfinance as yf
-yf.set_tz_cache_location("custom/cache/location")
-...
-```
-
 ---
 
 ## Installation
@@ -238,11 +272,6 @@ Install `yfinance` using `pip`:
 $ pip install yfinance --upgrade --no-cache-dir
 ```
 
-Test new features by installing betas, provide feedback in [corresponding Discussion](https://github.com/ranaroussi/yfinance/discussions):
-``` {.sourceCode .bash}
-$ pip install yfinance --upgrade --no-cache-dir --pre
-```
-
 To install `yfinance` using `conda`, see
 [this](https://anaconda.org/ranaroussi/yfinance).
 
@@ -251,22 +280,19 @@ To install `yfinance` using `conda`, see
 -   [Python](https://www.python.org) \>= 2.7, 3.4+
 -   [Pandas](https://github.com/pydata/pandas) \>= 1.3.0
 -   [Numpy](http://www.numpy.org) \>= 1.16.5
--   [requests](http://docs.python-requests.org/en/master) \>= 2.31
+-   [requests](http://docs.python-requests.org/en/master) \>= 2.26
 -   [lxml](https://pypi.org/project/lxml) \>= 4.9.1
 -   [appdirs](https://pypi.org/project/appdirs) \>= 1.4.4
 -   [pytz](https://pypi.org/project/pytz) \>=2022.5
 -   [frozendict](https://pypi.org/project/frozendict) \>= 2.3.4
 -   [beautifulsoup4](https://pypi.org/project/beautifulsoup4) \>= 4.11.1
 -   [html5lib](https://pypi.org/project/html5lib) \>= 1.1
+-   [cryptography](https://pypi.org/project/cryptography) \>= 3.3.2
 
-#### Optional (if you want to use `pandas_datareader`)
+### Optional (if you want to use `pandas_datareader`)
 
 -   [pandas\_datareader](https://github.com/pydata/pandas-datareader)
     \>= 0.4.0
-
-## Developers: want to contribute?
-
-`yfinance` relies on community to investigate bugs and contribute code. Developer guide: https://github.com/ranaroussi/yfinance/discussions/1084
 
 ---
 

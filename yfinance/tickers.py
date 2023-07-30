@@ -87,4 +87,10 @@ class Tickers:
         return data
 
     def news(self):
-        return {ticker: [item for item in Ticker(ticker).news] for ticker in self.symbols}
+        collection = {}
+        for ticker in self.symbols:
+            collection[ticker] = []
+            items = Ticker(ticker).news
+            for item in items:
+                collection[ticker].append(item)
+        return collection
